@@ -1,6 +1,8 @@
 name: Zero-Touch AUR Release Publisher
 
 on:
+  push:
+    branches: [main]
   schedule:
     - cron: '0 */6 * * *' # Sync with eval-exec/neomacs releases every 6 hours
   workflow_dispatch:

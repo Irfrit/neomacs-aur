@@ -27,21 +27,27 @@ jobs:
           # 1. Fetch latest release from upstream eval-exec/neomacs
           LATEST_TAG=$(curl -sL https://api.github.com/repos/eval-exec/neomacs/releases/latest | jq -r '.tag_name // empty')
           if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
-            echo "Error: Could not fetch latest release from eval-exec/neomacs"
+            echo "::error::Could not fetch latest release from eval-exec/neomacs"
             exit 1
           fi
           VERSION="${LATEST_TAG#v}"
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "Targeting upstream release version: ${VERSION}"
 
-          # 2. Setup SSH Key for builder user
-          useradd -m builder
+          # 2. Verify AUR_SSH_PRIVATE_KEY secret is present
+          if [ -z "$AUR_PRIVATE_KEY" ]; then
+            echo "::error::GitHub Secret 'AUR_SSH_PRIVATE_KEY' is missing or empty! Please add it in Repo Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+
+          # 3. Setup SSH Key for builder user
+          id -u builder &>/dev/null || useradd -m builder
           echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
           mkdir -p /home/builder/.ssh
           chmod 700 /home/builder/.ssh
           echo "$AUR_PRIVATE_KEY" > /home/builder/.ssh/id_aur
           chmod 600 /home/builder/.ssh/id_aur
-          ssh-keyscan -H aur.archlinux.org >> /home/builder/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -v -H aur.archlinux.org >> /home/builder/.ssh/known_hosts 2>/dev/null || true
           {
             echo "Host aur.archlinux.org"
             echo "  User aur"
@@ -56,13 +62,17 @@ jobs:
           chown -R builder:builder .
 
           # Clone AUR repository
-          su builder -c "git clone ssh://aur@aur.archlinux.org/neomacs-bin.git /tmp/aur-repo"
+          echo "==> Cloning AUR repository (neomacs-bin)..."
+          if ! su builder -c "git clone ssh://aur@aur.archlinux.org/neomacs-bin.git /tmp/aur-repo"; then
+            echo "::error::Failed to clone AUR repo ssh://aur@aur.archlinux.org/neomacs-bin.git. Please check that: 1) The secret 'AUR_SSH_PRIVATE_KEY' matches the public key in your AUR account, and 2) The package 'neomacs-bin' exists on AUR or you are its maintainer/co-maintainer."
+            exit 1
+          fi
 
           # Download target release tarball from upstream eval-exec/neomacs and compute SHA256
           TARBALL_URL="https://github.com/eval-exec/neomacs/releases/download/v${VERSION}/neomacs-${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
           echo "Downloading $TARBALL_URL ..."
           if ! curl -sL --fail "$TARBALL_URL" -o /tmp/neomacs.tar.gz; then
-            echo "Error: Release tarball for version ${VERSION} not found at $TARBALL_URL"
+            echo "::error::Release tarball for version ${VERSION} not found at $TARBALL_URL"
             exit 1
           fi
           SHA256=$(sha256sum /tmp/neomacs.tar.gz | awk '{print $1}')

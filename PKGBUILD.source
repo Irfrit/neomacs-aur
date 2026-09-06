@@ -1,0 +1,41 @@
+# Maintainer: eval-exec <eval-exec@github>
+pkgname=neomacs
+pkgver=0.0.14
+pkgrel=1
+pkgdesc="GPU powered Emacs written in Rust with a modern display engine"
+arch=('x86_64')
+url="https://github.com/eval-exec/neomacs"
+license=('GPL-3.0-or-later')
+depends=(
+  'fontconfig'
+  'freetype2'
+  'gcc-libs'
+  'glib2'
+  'gstreamer'
+  'gst-plugins-base-libs'
+  'ncurses'
+  'zlib'
+)
+makedepends=('cargo' 'clang' 'git' 'cmake' 'pkgconf')
+provides=('neomacs' 'emacs')
+conflicts=('neomacs-bin' 'emacs')
+source=("${pkgname}-${pkgver}.tar.gz::https://github.com/eval-exec/neomacs/archive/refs/tags/v${pkgver}.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "${pkgname}-${pkgver}"
+  export CARGO_HOME="${srcdir}/cargo"
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "${pkgname}-${pkgver}"
+  export CARGO_HOME="${srcdir}/cargo"
+  cargo build --release --frozen
+}
+
+package() {
+  cd "${pkgname}-${pkgver}"
+  install -Dm755 "target/release/neomacs" "${pkgdir}/usr/bin/neomacs"
+  install -Dm644 "COPYING" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

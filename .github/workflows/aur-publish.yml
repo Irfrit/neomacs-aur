@@ -105,10 +105,11 @@ jobs:
           su builder -c "git config --global user.name '${{ github.actor }}'"
           su builder -c "git config --global user.email '${{ github.actor }}@users.noreply.github.com'"
           
-          if su builder -c "git status --porcelain" | grep -q .; then
-            su builder -c "git add PKGBUILD .SRCINFO"
+          su builder -c "git add PKGBUILD .SRCINFO"
+
+          if ! su builder -c "git diff --cached --quiet"; then
             su builder -c "git commit -m 'neomacs-bin ${VERSION}-1'"
-            su builder -c "git push origin master || git push origin main"
+            su builder -c "git push origin master" || su builder -c "git push origin main"
             echo "Successfully deployed neomacs-bin ${VERSION}-1 to AUR!"
           else
             echo "No changes detected. AUR is already up to date."

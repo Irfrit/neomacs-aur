@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   repository_dispatch:
-    types: [neomacs_release_published]
+    types: [neomacs_release_published, neomacs_release_published_v1]
   schedule:
     - cron: '0 */6 * * *' # Sync with eval-exec/neomacs releases every 6 hours
   workflow_dispatch:
@@ -16,6 +16,8 @@ concurrency:
 jobs:
   aur-publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     container:
       image: archlinux:latest
     steps:
@@ -29,9 +31,15 @@ jobs:
       - name: Extract version and prepare SSH
         env:
           AUR_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          DISPATCH_TAG: ${{ github.event.client_payload.tag }}
         run: |
-          # 1. Fetch latest release from upstream eval-exec/neomacs
-          LATEST_TAG=$(curl -sL https://api.github.com/repos/eval-exec/neomacs/releases/latest | jq -r '.tag_name // empty')
+          # 1. Fetch release tag from payload or upstream eval-exec/neomacs
+          if [ -n "$DISPATCH_TAG" ]; then
+            LATEST_TAG="$DISPATCH_TAG"
+          else
+            LATEST_TAG=$(curl -sL https://api.github.com/repos/eval-exec/neomacs/releases/latest | jq -r '.tag_name // empty')
+          fi
+
           if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
             echo "::error::Could not fetch latest release from eval-exec/neomacs"
             exit 1
@@ -113,4 +121,16 @@ jobs:
             echo "Successfully deployed neomacs-bin ${VERSION}-1 to AUR!"
           else
             echo "No changes detected. AUR is already up to date."
+          fi
+
+          # Sync updated PKGBUILD and .SRCINFO back to GitHub source repository
+          cd "$GITHUB_WORKSPACE"
+          cp /tmp/aur-repo/PKGBUILD /tmp/aur-repo/.SRCINFO .
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          if ! git diff --quiet PKGBUILD .SRCINFO; then
+            git add PKGBUILD .SRCINFO
+            git commit -m "chore(sync): update to ${VERSION}-1 [skip ci]"
+            git push origin main || true
           fi
